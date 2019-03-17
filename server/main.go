@@ -129,13 +129,8 @@ func handleClient(p1 io.ReadWriteCloser, p2 *net.TCPConn, quiet bool) {
 				p2.CloseWrite()
 				break
 			}
-			//io.CopyN(p2, r, int64(i+len(s)))
 			io.CopyN(p2, r, int64(i))
 		}
-		// r := bufio.NewReader(p1)
-		// s, _ := r.ReadString('\t')
-		//p2.Write([]byte(s[:len(s)-1]))
-		//p2.CloseWrite()
 		log.Println("end step1")
 		close(p2die)
 	}()

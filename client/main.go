@@ -90,12 +90,12 @@ func handleClient(sess *smux.Session, p1 io.ReadWriteCloser, quiet bool) {
 		//		w := bufio.NewReader(p2)
 		for {
 			n, err := r.Read(buf2)
-			data := fmt.Sprintf("%d:%s", n, buf2[:n])
-			p2.Write([]byte(data))
 			if err != nil {
 				p2.Write([]byte("0:"))
 				break
 			}
+			data := fmt.Sprintf("%d:%s", n, buf2[:n])
+			p2.Write([]byte(data))
 		}
 
 		// io.CopyBuffer(p2, p1, buf2)
