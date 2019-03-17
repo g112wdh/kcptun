@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"crypto/sha1"
 	"encoding/csv"
 	"fmt"
@@ -73,17 +74,39 @@ func handleClient(sess *smux.Session, p1 io.ReadWriteCloser, quiet bool) {
 	// start tunnel
 	p1die := make(chan struct{})
 	buf1 := make([]byte, 65535)
-	go func() { io.CopyBuffer(p1, p2, buf1); close(p1die) }()
+	go func() {
+		log.Println("start step2")
+		io.CopyBuffer(p1, p2, buf1)
+		close(p1die)
+		log.Println("end step2")
+	}()
 
 	p2die := make(chan struct{})
 	buf2 := make([]byte, 65535)
-	go func() { io.CopyBuffer(p2, p1, buf2); close(p2die) }()
+	go func() {
+		log.Println("start step1")
+
+		r := bufio.NewReader(p1)
+		//		w := bufio.NewReader(p2)
+		for {
+			n, err := r.Read(buf2)
+			data := fmt.Sprintf("%d:%s", n, buf2[:n])
+			p2.Write([]byte(data))
+			if err != nil {
+				p2.Write([]byte("0:"))
+				break
+			}
+		}
+
+		// io.CopyBuffer(p2, p1, buf2)
+		// p2.Write([]byte("\t"))
+		log.Println("end step1")
+		close(p2die)
+	}()
 
 	// wait for tunnel termination
-	select {
-	case <-p1die:
-	case <-p2die:
-	}
+	<-p1die
+	<-p2die
 }
 
 func checkError(err error) {

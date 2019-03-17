@@ -11,12 +11,14 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"strconv"
 	"time"
 
 	"golang.org/x/crypto/pbkdf2"
 
 	"path/filepath"
 
+	"bufio"
 	"github.com/golang/snappy"
 	"github.com/urfave/cli"
 	kcp "github.com/xtaci/kcp-go"
@@ -77,7 +79,10 @@ func handleMux(conn io.ReadWriteCloser, config *Config) {
 			log.Println(err)
 			return
 		}
-		p2, err := net.DialTimeout("tcp", config.Target, 5*time.Second)
+
+		target, err := net.ResolveTCPAddr("tcp", config.Target)
+		p2, err := net.DialTCP("tcp", nil, target)
+		//p2, err := net.DialTimeout("tcp", config.Target, 5*time.Second)
 		if err != nil {
 			p1.Close()
 			log.Println(err)
@@ -87,7 +92,7 @@ func handleMux(conn io.ReadWriteCloser, config *Config) {
 	}
 }
 
-func handleClient(p1, p2 io.ReadWriteCloser, quiet bool) {
+func handleClient(p1 io.ReadWriteCloser, p2 *net.TCPConn, quiet bool) {
 	if !quiet {
 		log.Println("stream opened")
 		defer log.Println("stream closed")
@@ -98,17 +103,46 @@ func handleClient(p1, p2 io.ReadWriteCloser, quiet bool) {
 	// start tunnel
 	p1die := make(chan struct{})
 	buf1 := make([]byte, 65535)
-	go func() { io.CopyBuffer(p1, p2, buf1); close(p1die) }()
+	go func() {
+		log.Println("start step2")
+		io.CopyBuffer(p1, p2, buf1)
+		close(p1die)
+		log.Println("end step2")
+	}()
 
 	p2die := make(chan struct{})
-	buf2 := make([]byte, 65535)
-	go func() { io.CopyBuffer(p2, p1, buf2); close(p2die) }()
+	//buf2 := make([]byte, 65535)
+	go func() {
+		log.Println("start step1")
+		//io.CopyBuffer(p2, p1, buf2)
+
+		r := bufio.NewReader(p1)
+		for {
+			s, err := r.ReadString(':')
+			if err != nil {
+				p2.CloseWrite()
+				break
+			}
+
+			i, _ := strconv.Atoi(s[:len(s)-1])
+			if i == 0 {
+				p2.CloseWrite()
+				break
+			}
+			//io.CopyN(p2, r, int64(i+len(s)))
+			io.CopyN(p2, r, int64(i))
+		}
+		// r := bufio.NewReader(p1)
+		// s, _ := r.ReadString('\t')
+		//p2.Write([]byte(s[:len(s)-1]))
+		//p2.CloseWrite()
+		log.Println("end step1")
+		close(p2die)
+	}()
 
 	// wait for tunnel termination
-	select {
-	case <-p1die:
-	case <-p2die:
-	}
+	<-p1die
+	<-p2die
 }
 
 func checkError(err error) {
